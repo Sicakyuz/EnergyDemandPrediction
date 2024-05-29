@@ -1,2 +1,2 @@
-# Ignore the virtual environment directory .venv/ # Ignore the data.csv file
-data.csv
+
+# Ignore the virtual environment directory .venv/ # Ignore the data.csv file data.csv .idea/ .venv/
