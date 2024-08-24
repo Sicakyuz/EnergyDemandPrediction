@@ -1,4 +1,21 @@
-.idea/
+# Virtual environment dosyalarını hariç tut
 .venv/
+.env/
 
-# Ignore the virtual environment directory .venv/ # Ignore the data.csv file data.csv .idea/ .venv/
+# Veri seti dosyalarını hariç tut
+Book2.xlsx
+
+# IDE/editor ayar dosyalarını hariç tut
+.idea/
+.vscode/
+
+# Python bytecode dosyalarını hariç tut
+*.pyc
+__pycache__/
+
+# Geçici dosyalar
+*.log
+*.tmp
+
+# Videolar klasörünü hariç tut
+VIDEOS/

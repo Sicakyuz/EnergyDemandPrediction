@@ -5,14 +5,11 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
-
+from file_upload import upload_file,load_default_file
 
 # Load data from a file embedded in the app
-@st.cache_data
-def load_data():
-    df = pd.read_csv('/Users/asmir/Desktop/MyProjects/EnergyDemandPrediction/data.csv')  # Replace with your file path
-    return df
 
+#DEFAULT_FILE_PATH = '/Users/asmir/Desktop/MyProjects/EnergyDemandPrediction/Book2.xlsx'
 
 def prepare_data(df):
     df['TARIH'] = pd.to_datetime(df['TARIH'], errors='coerce')
@@ -46,8 +43,8 @@ def sarima_model_and_forecast(df, city, order, seasonal_order, steps):
 
 
 # Main app
-def main():
-    df = load_data()
+def main_City():
+    df = st.session_state['data']
     if df is not None:
         df_processed = prepare_data(df)
         st.header("Select City for Forecasting")
@@ -149,6 +146,3 @@ def main():
         st.error("Data is not loaded. Please upload data through the main interface.")
 
 
-# Run the app
-if __name__ == '__main__':
-    main()

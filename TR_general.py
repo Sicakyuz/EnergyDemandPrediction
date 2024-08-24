@@ -1,299 +1,320 @@
-import warnings
 import streamlit as st
-import numpy as np
-from datetime import timedelta, datetime
-import time
 import pandas as pd
-import lightgbm as lgb
+import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-from sklearn.metrics import mean_absolute_error, mean_squared_error, f1_score, roc_curve, auc
-from statsmodels.tsa.seasonal import seasonal_decompose
+import matplotlib.dates as mdates
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
-import plotly.express as px
-from sklearn.ensemble import IsolationForest
-import plotly.graph_objects as go
-import folium
-from streamlit_folium import folium_static
-from folium.plugins import MarkerCluster
-import branca
-import branca.colormap as cm
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.seasonal import seasonal_decompose
+from prophet import Prophet
+import file_upload
 
-warnings.filterwarnings('ignore')
+# Function to load and preprocess data
+def preprocess_data(df):
+    print("Columns in DataFrame:", df.columns)  # Print column names
+    print("First few rows of the DataFrame:", df.head())  # Print first few rows
 
-# Settings
-pd.set_option('display.max_columns', None)
-sns.set_style('whitegrid')
-
-################# DATA LOADING #################################
-
-# Path to the default file
-DEFAULT_FILE_PATH = '/Users/asmir/Desktop/Enerji/Enerji/Data/Book2.xlsx'
-
-def load_data(uploaded_file):
-    if uploaded_file is not None:
-        df = pd.read_excel(uploaded_file)
-    else:
-        # Load the default file if no file is uploaded
-        df = pd.read_excel(DEFAULT_FILE_PATH)
-    return df
-
-
-################# DATA PREPROCESSING #################################
-
-def create_date_features(df):
     if 'TARIH' in df.columns:
-        df['TARIH'] = pd.to_datetime(df['TARIH'])
-        df['YEAR'] = df['TARIH'].dt.year.astype(int)
-        df['MONTH'] = df['TARIH'].dt.month
-        df['DAY'] = df['TARIH'].dt.day
-        df['DAY_OF_MONTH'] = df['TARIH'].dt.day
-        df['DAY_OF_YEAR'] = df['TARIH'].dt.dayofyear
-        df['WEEK_OF_YEAR'] = df['TARIH'].dt.isocalendar().week
+        df['TARIH'] = pd.to_datetime(df['TARIH'], errors='coerce')
+        df = df.dropna(subset=['TARIH'])  # Drop rows with invalid dates
+
+        # Ensure date range is valid
+        min_date = df['TARIH'].min()
+        max_date = df['TARIH'].max()
+        if min_date.year < 2018 or max_date.year > 2024:
+            raise ValueError("Date range is out of bounds. Ensure dates are within a valid range.")
+
+        df.set_index('TARIH', inplace=True)
     else:
-        st.error('TARIH sütunu eksik veya yanlış formatta.')
+        st.error("Column 'TARIH' is missing from the data.")
+        return None
+
+    df.fillna(method='ffill', inplace=True)
+    df = pd.get_dummies(df, columns=['BOLGE', 'ILLER'], drop_first=True)
+
     return df
 
-def preprocess_categorical_features(df):
-    # Fill NaN values with a placeholder string before encoding
-    cat_columns = df.select_dtypes(include=['object', 'category']).columns
-    label_encoders = {}
-    for col in cat_columns:
-        label_encoders[col] = LabelEncoder()
-        df[col] = label_encoders[col].fit_transform(df[col])
-    return df, label_encoders
+def prepare_test_data(df, forecast_horizon):
+    test_data = df[-forecast_horizon:].copy()
+    test_data['TARIH'] = pd.to_datetime(test_data['TARIH'], errors='coerce')
+    test_data = test_data.dropna(subset=['TARIH'])
+    test_data = test_data.reset_index(drop=True)  # Reset index to ensure alignment
 
+    return test_data
 
-def random_noise(dataframe):
-    return np.random.normal(scale=0.01, size=(len(dataframe),))
+# Function to prepare data for machine learning models
+def prepare_ml_data(df):
+    df = df.copy()
 
-def add_lag_and_noise_features(df, lags, column):
-    for lag in lags:
-        df[f'{column}_LAG_{lag}'] = df.groupby(['ILLER',"BOLGE"])[column].transform(
-            lambda x: x.shift(lag)) + random_noise(df)
-    return df
+    # Convert datetime columns to numeric features or handle them as necessary
+    if 'TARIH' in df.columns:
+        df['TARIH'] = df['TARIH'].astype(np.int64) // 10 ** 9  # Convert to timestamp
+        df = df.drop(columns=['TARIH'])
 
-def add_rolling_mean_features(df, window_sizes, column='TUKETIM_GENEL_TOPLAM'):
-    for window in window_sizes:
-        for lag in range(1, 13):
-            df[f'{column}_ROLLING_MEAN_WINDOW_{window}_LAG_{lag}'] = df.groupby(['ILLER',"BOLGE"])[column].shift(lag).rolling(window=window, min_periods=1, win_type="triang").mean()+random_noise(df)
-    return df
+    X = df.drop(columns=['TUKETIM_GENEL_TOPLAM'])
+    y = df['TUKETIM_GENEL_TOPLAM']
 
-def add_ewm_features(df, alphas, lags, column='TUKETIM_GENEL_TOPLAM'):
-    for alpha in alphas:
-        for lag in lags:
-            df[f'{column}_EWM_ALPHA_{str(alpha).replace(".", "")}_LAG_{lag}'] = df.groupby(['ILLER',"BOLGE"])[column].shift(
-                    lag).ewm(alpha=alpha).mean()
-    return df
+    X = X.select_dtypes(include=[np.number])  # Keep only numeric columns
 
+    # Ensure that X and y are numpy arrays
+    X = X.values
+    y = y.values
 
-def add_seasonality_features(df):
-    if 'MONTH' not in df.columns:
-        st.error('MONTH column not found. Ensure date features are created first.')
-    df['SIN_MONTH'] = np.sin(2 * np.pi * df['MONTH'] / 12)
-    df['COS_MONTH'] = np.cos(2 * np.pi * df['MONTH'] / 12)
-    return df
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(X)
 
-# Update your main preprocessing function
-def preprocess_data(df, lags, window_sizes, alphas):
-    print("Columns before preprocessing:", df.columns)
-    df = create_date_features(df)
-    print("Columns after creating date features:", df.columns)
+    return X_scaled, y, scaler
 
-    if df['TARIH'].isnull().any():
-        st.error("Error in date parsing. Check date formats.")
-        return None, None
+# Function to train SARIMA model
+def train_sarima_model(df):
+    model = SARIMAX(df['TUKETIM_GENEL_TOPLAM'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
+    results = model.fit()
+    return results
 
-    # Continue with preprocessing
-    df, label_encoders = preprocess_categorical_features(df)
-    df = add_lag_and_noise_features(df, lags, 'TUKETIM_GENEL_TOPLAM')
-    df = add_rolling_mean_features(df, window_sizes)
-    df = add_seasonality_features(df)
-    df = add_ewm_features(df, alphas, lags, 'TUKETIM_GENEL_TOPLAM')
-    df.sort_values(by=['ILLER',"BOLGE", 'TARIH'], inplace=True)
+# Function to train Prophet model
+def train_prophet_model(df):
+    df_prophet = df.reset_index()
+    df_prophet.columns = ['ds', 'y'] + list(df_prophet.columns[2:])
 
-    return df, label_encoders
-
-
-################# TRAIN-TEST DATA DEFINITION #################################
-
-# Veri setini ayırma
-
-def split_and_check_data(df, split_date):
-    # Ensure split_date is a pandas Timestamp
-    split_date = pd.Timestamp(split_date)
-
-    train_data = df[df['TARIH'] < split_date]
-    val_data = df[df['TARIH'] >= split_date]
-
-    if train_data.empty or val_data.empty:
-        st.error("Training or validation set is empty. Please check your split date.")
-        return None, None, False
-
-    return train_data, val_data, True
-
-################# MODEL TRAINING ############################################
-
-
-# In your training function, ensure the categorical features are listed correctly before training
-def train_model(train_data, cat_features):
-    X_train = train_data.drop(columns=['TARIH', 'TUKETIM_GENEL_TOPLAM'])
-    y_train = train_data['TUKETIM_GENEL_TOPLAM']
-    lgb_train = lgb.Dataset(X_train, y_train, categorical_feature=cat_features)
-
-    params = {
-        'objective': 'regression',
-        'metric': 'l1',
-        'num_leaves': 60,
-        'learning_rate': 0.05,
-        'bagging_fraction': 0.8,
-        'bagging_freq': 5,
-        'seed': 42
-    }
-
-    model = lgb.train(params, lgb_train, num_boost_round=1000, valid_sets=[lgb_train], callbacks=[lgb.early_stopping(50)])
+    model = Prophet()
+    model.fit(df_prophet[['ds', 'y']])
     return model
 
-################# MODEL EVALUATION ##########################################
+# Function to train ML models
+def train_ml_model(X_train, y_train, model_type):
+    if model_type == 'Random Forest':
+        model = RandomForestRegressor()
+    elif model_type == 'Gradient Boosting':
+        model = GradientBoostingRegressor()
+    elif model_type == 'Linear Regression':
+        model = LinearRegression()
+    else:
+        raise ValueError("Invalid model type")
 
-def evaluate_model(model, val_data):
-    X_val = val_data.drop(columns=['TARIH', 'TUKETIM_GENEL_TOPLAM'])
-    y_val = val_data['TUKETIM_GENEL_TOPLAM']
+    model.fit(X_train, y_train)
+    return model
 
-    y_pred = model.predict(X_val, num_iteration=model.best_iteration)
-    mae = mean_absolute_error(y_val, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
-    st.write("Doğrulama seti için Ortalama Mutlak Hata (MAE): ", mae)
-    st.write("Doğrulama seti için Hata Kareler Ortalaması (RMSE): ", rmse)
+# Function to calculate MAPE
+def mean_absolute_percentage_error(y_true, y_pred):
+    y_true, y_pred = np.array(y_true), np.array(y_pred)
+    nonzero_elements = y_true != 0
+    return np.mean(np.abs((y_true[nonzero_elements] - y_pred[nonzero_elements]) / y_true[nonzero_elements])) * 100
 
-    return mae, rmse
+# Function to evaluate models
+def evaluate_model(model, X_test=None, y_test=None, model_type=None, scaler=None, df=None):
+    if df is None:
+        raise ValueError("Dataframe must be provided for model evaluation")
 
-################# PREDICTION ################################################
+    if model_type in ['Random Forest', 'Gradient Boosting', 'Linear Regression']:
+        if X_test is None or y_test is None:
+            raise ValueError("X_test and y_test must be provided for ML model evaluation")
 
-def predict_future_data(model, df, label_encoders, lags, window_sizes, alphas, n_months):
-    # Generate future dates
-    last_date = pd.to_datetime(df['TARIH']).max()
-    future_dates = [last_date + timedelta(days=31*i) for i in range(1, n_months+1)]
-
-    future_df = pd.DataFrame({'TARIH': future_dates})
-
-    # Creating lag features
-    for lag in lags:
-        future_df[f'TUKETIM_GENEL_TOPLAM_LAG_{lag}'] = df['TUKETIM_GENEL_TOPLAM'].shift(lag)
-
-    # Creating rolling mean features
-    for window in window_sizes:
-        for lag in range(1, 13):
-            future_df[f'TUKETIM_GENEL_TOPLAM_ROLLING_MEAN_WINDOW_{window}_LAG_{lag}'] = df['TUKETIM_GENEL_TOPLAM'].shift(lag).rolling(window=window, min_periods=1, win_type="triang").mean()
-
-    # Creating exponential weighted mean features
-    for alpha in alphas:
-        for lag in lags:
-            future_df[f'TUKETIM_GENEL_TOPLAM_EWM_ALPHA_{str(alpha).replace(".", "")}_LAG_{lag}'] = df['TUKETIM_GENEL_TOPLAM'].shift(lag).ewm(alpha=alpha).mean()
-
-    # Creating date features
-    future_df = create_date_features(future_df)
-
-    # Label encoding for categorical features
-    for col in label_encoders:
-        future_df[col] = label_encoders[col].transform(future_df[col])
-
-    # Making predictions
-    X_future = future_df.drop(columns=['TARIH'])
-    future_df['TUKETIM_GENEL_TOPLAM_PREDICTED'] = model.predict(X_future)
-
-    return future_df
-
-def debug_data(df):
-    st.write("Preview:", df.head())
-    st.write("Data Types:", df.dtypes)
-    st.write("Null Values:", df.isnull().sum())
-    st.write("Describe Data:", df.describe(include='all'))
-
-#
+        predictions = model.predict(X_test)
+        rmse = np.sqrt(mean_squared_error(y_test, predictions))
+        mae = mean_absolute_error(y_test, predictions)
+        mape = mean_absolute_percentage_error(y_test, predictions)
 
 
-################# MAIN FUNCTION ##############################################
+    elif model_type == 'Prophet':
+        if df is None:
+            raise ValueError("Dataframe must be provided for Prophet model evaluation")
 
-def main():
-    st.title("Elektrik Tüketimi Tahmini")
+        num_periods = min(len(df), 365)  # Limit to a reasonable forecast period
+        future = model.make_future_dataframe(periods=num_periods, freq='M')
 
-    st.sidebar.title("Parametreler")
+        if future.empty:
+            raise ValueError("Future dataframe is empty")
 
-    # Data upload
-    uploaded_file = st.sidebar.file_uploader("Lütfen dosya yükleyin.", type=["xlsx", "csv"])
-    if uploaded_file is not None:
-        df=pd.read_excel(uploaded_file)
-        df = load_data(uploaded_file)
-               # Feature engineering parameters
-        st.sidebar.subheader("Öznitelik Mühendisliği Parametreleri")
+        forecast = model.predict(future)
+        predictions = forecast['yhat'][-num_periods:].values  # Align predictions with forecast period
+        y_test = df['TUKETIM_GENEL_TOPLAM'][-num_periods:].values  # Align y_test with forecast period
 
-        # Setting split_date using Streamlit's date_input
-        split_date = st.sidebar.date_input("Select a split date",
-                                           value=pd.to_datetime('today') - pd.DateOffset(days=30))
-        # Öznitelik mühendisliği parametrelerini kullanıcıya bırak
-        lags = st.sidebar.multiselect("Lag sayıları", options=[1, 7, 30, 60, 90], default=[1, 7, 30])
-        window_sizes = st.sidebar.multiselect("Hareketli ortalama pencere boyutları", options=[3, 7, 15, 30, 60],
-                                              default=[3, 7, 15])
-        alphas = st.sidebar.multiselect("EWMA alpha değerleri", options=[0.1, 0.3, 0.5, 0.7, 0.9],
-                                        default=[0.3, 0.5, 0.7])
-        # Data Preprocessing
-        df_preprocessed, label_encoders = preprocess_data(df, [1, 7, 30], [7, 15, 30], [0.3, 0.5])
-        split_date = pd.Timestamp(split_date)  # Convert to Timestamp here if not yet converted
+        if len(predictions) != len(y_test):
+            raise ValueError(f"Inconsistent lengths: y_test ({len(y_test)}), predictions ({len(predictions)})")
 
-        st.write(df_preprocessed.head())
-
-        debug_data(df_preprocessed)
-        if df_preprocessed is not None:
-            st.write("Preprocessed Data:")
-            st.write(df_preprocessed.head())
-        # Split data
+        rmse = np.sqrt(mean_squared_error(y_test, predictions))
+        mae = mean_absolute_error(y_test, predictions)
+        mape = mean_absolute_percentage_error(y_test, predictions)
 
 
-        # Tarihe göre veri setini ayırma
-        train_data = df[df['TARIH'] < split_date]
-        val_data = df[df['TARIH'] >= split_date]
+    elif model_type == 'SARIMA':
+        if df is None:
+            raise ValueError("Dataframe must be provided for SARIMA model evaluation")
 
-        print("Eğitim seti boyutu:", train_data.shape)
-        print("Doğrulama seti boyutu:", val_data.shape)
+        forecast_horizon = min(len(df) - int(len(df) * 0.8), 365)  # Limit to 1 year or less
+        start = df.index[-1] + pd.DateOffset(days=1)
+        end = start + pd.DateOffset(days=forecast_horizon)
 
-        if train_data.empty or val_data.empty:
-            print("Eğitim seti veya doğrulama seti boş. Lütfen split tarihini kontrol edin.")
-        else:
-            print("Her iki set de uygun veri içeriyor.")
-        # Train model
-        st.sidebar.subheader("Model Eğitimi")
-        if st.sidebar.button("Train Model"):
-            train_data, val_data, success = split_and_check_data(df_preprocessed, split_date)
+        try:
+            forecast = model.get_forecast(steps=forecast_horizon)
+            predictions = forecast.predicted_mean
+            y_test = df['TUKETIM_GENEL_TOPLAM'][-forecast_horizon:].values
+            rmse = np.sqrt(mean_squared_error(y_test, predictions))
+            mae = mean_absolute_error(y_test, predictions)
+            mape = mean_absolute_percentage_error(y_test, predictions)
 
-            if success:
-                st.sidebar.subheader("Model Training")
-                cat_features = ['ILLER', 'BOLGE']  # Assuming these are categorical features you've encoded
-
-                model = train_model(train_data, cat_features)
-                mae, rmse = evaluate_model(model, val_data)
-                st.write(f"Validation MAE: {mae}, RMSE: {rmse}")
-
-            # Predict future data
-            st.sidebar.subheader("Gelecek Veri Tahmini")
-            # Future predictions
-            n_months = st.sidebar.number_input("Months ahead to predict", min_value=1, max_value=12, value=3)
-            if st.sidebar.button("Predict Future"):
-                future_data = predict_future_data(model, df_preprocessed, label_encoders, lags, window_sizes,
-                                                      alphas, n_months)
-                st.write("Future Predictions:")
-                st.dataframe(future_data[['TARIH', 'TUKETIM_GENEL_TOPLAM_PREDICTED']])
-                fig = px.line(future_data, x='TARIH', y='TUKETIM_GENEL_TOPLAM_PREDICTED',
-                                  title="Future Consumption Predictions")
-                st.plotly_chart(fig)
-        else:
-            st.error("Failed to create training and validation sets. Please check your data and parameters.")
+        except ValueError as e:
+            print(f"Error during SARIMA forecasting: {e}")
+            return None, None, None
 
     else:
-        st.info("Lütfen yüklemek için bir Excel dosyası yükleyin.")
+        raise ValueError("Invalid model type")
+
+    return rmse, mae, mape, predictions
+
+def plot_results(test_data, predictions):
+    import matplotlib.pyplot as plt
+
+    if predictions is not None and not test_data.empty:
+        plt.figure(figsize=(12, 6))
+        plt.plot(test_data.index, test_data['TUKETIM_GENEL_TOPLAM'], label='Actual', color='blue')
+        plt.plot(test_data.index[-len(predictions):], predictions, label='Predicted', color='red')
+        plt.xlabel('Date')
+        plt.ylabel('Energy Consumption')
+        plt.title('Energy Consumption Forecast')
+        plt.legend()
+        plt.show()
+    else:
+        print("No predictions available to plot.")
+
+def plot_seasonal_decomposition(df):
+    result = seasonal_decompose(df['TUKETIM_GENEL_TOPLAM'], model='additive', period=12)
+    fig, axs = plt.subplots(4, 1, figsize=(12, 12), sharex=True)
+
+    axs[0].plot(result.observed, label='Observed', color='blue')
+    axs[0].set_title('Observed')
+    axs[1].plot(result.trend, label='Trend', color='orange')
+    axs[1].set_title('Trend')
+    axs[2].plot(result.seasonal, label='Seasonal', color='green')
+    axs[2].set_title('Seasonal')
+    axs[3].plot(result.resid, label='Residual', color='red')
+    axs[3].set_title('Residual')
+
+    for ax in axs:
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+    plt.tight_layout()
+    st.pyplot(fig)
 
 
-if __name__ == '__main__':
-    main()
+
+
+def plot_results(test_data, predictions):
+    if predictions is not None and not test_data.empty:
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        # Plot actual and predicted data
+        ax.plot(test_data.index, test_data['TUKETIM_GENEL_TOPLAM'], label='Actual', color='royalblue', linestyle='--', linewidth=2)
+        ax.plot(test_data.index[-len(predictions):], predictions, label='Predicted', color='tomato', linestyle='-', linewidth=2)
+
+        # Set labels and title
+        ax.set_xlabel('Date', fontsize=14)
+        ax.set_ylabel('Energy Consumption', fontsize=14)
+        ax.set_title('Energy Consumption Forecast', fontsize=16)
+
+        # Set y-axis limits and grid
+        ax.set_ylim(bottom=0)  # Set bottom limit of y-axis to 0, adjust as necessary
+        ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))  # Use integer ticks
+
+        # Format x-axis to show years and improve readability
+        ax.xaxis.set_major_locator(mdates.YearLocator())  # Place a tick mark for each year
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))  # Format ticks as year
+        plt.xticks(rotation=45)  # Rotate date labels for readability
+
+        # Add legend and grid
+        ax.legend()
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        # Display the plot in Streamlit
+        st.pyplot(fig)
+    else:
+        st.write("Predictions cannot be displayed.")
+
+
+def main_TR():
+    data = st.session_state.get('data')
+    if data is not None:
+        df = preprocess_data(data)
+        if df is None:
+            st.error("Data preprocessing failed.")
+            return
+
+        st.write("Data Preview:")
+        st.write(df.head())
+
+        model_type = st.selectbox("Select model",
+                                  ["SARIMA", "Prophet", "Random Forest", "Gradient Boosting", "Linear Regression"])
+
+        if model_type in ["Random Forest", "Gradient Boosting", "Linear Regression"]:
+            X, y, scaler = prepare_ml_data(df)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            model = train_ml_model(X_train, y_train, model_type)
+            rmse, mae, mape, predictions = evaluate_model(model, X_test, y_test, model_type=model_type, scaler=scaler, df=df)
+            st.write(f"Model: {model_type}")
+            st.write(f"RMSE: {rmse:.2f}")
+            st.write(f"MAE: {mae:.2f}")
+            st.write(f"MAPE: {mape:.2f}%")
+
+            st.write("Predictions:")
+            st.write(predictions)
+
+            plot_results(df[-len(predictions):], predictions)
+
+        elif model_type == 'Prophet':
+            model = train_prophet_model(df)
+            rmse, mae, mape, predictions = evaluate_model(model, model_type='Prophet', df=df)
+            st.write(f"Model: Prophet")
+            st.write(f"RMSE: {rmse:.2f}")
+            st.write(f"MAE: {mae:.2f}")
+            st.write(f"MAPE: {mape:.2f}%")
+
+            st.write("Predictions:")
+            st.write(predictions)
+
+            plot_results(df[-len(predictions):], predictions)
+
+        elif model_type == 'SARIMA':
+            model = train_sarima_model(df)
+            rmse, mae, mape, predictions = evaluate_model(model, model_type='SARIMA', df=df)
+        if rmse is not None and mae is not None and mape is not None and predictions is not None:
+            plot_results(df, predictions)  # Adjust plot_results if needed
+        else:
+            st.write("Model evaluation failed.")
+
+            st.write(f"Model: SARIMA")
+            st.write(f"RMSE: {rmse:.2f}")
+            st.write(f"MAE: {mae:.2f}")
+            st.write(f"MAPE: {mape:.2f}%")
+
+            st.write("Predictions:")
+            st.write(predictions)
+            # Creating a DataFrame for the predictions and actual values
+            predictions_df = df.copy()
+            forecast_horizon = len(predictions)
+            predictions_df = predictions_df[-forecast_horizon:].copy()
+            predictions_df['Predicted'] = predictions
+            predictions_df = predictions_df.reset_index()
+            predictions_df.columns = ['Date', 'Actual', 'Predicted']  # Adjust columns if necessary
+
+            st.write("Predictions vs Actual Values:")
+            st.dataframe(predictions_df)
+
+            # Visualization
+            fig, ax = plt.subplots()
+            ax.plot(df.index, df['TUKETIM_GENEL_TOPLAM'], label='Actual')
+            if predictions is not None:
+                ax.plot(df.index[-len(predictions):], predictions, label='Predicted', color='red')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Energy Consumption')
+            ax.set_title('Energy Consumption Forecast')
+            ax.legend()
+
+            st.pyplot(fig)
+            plot_results(df[-len(predictions):], predictions)
+
+        plot_seasonal_decomposition(df)
