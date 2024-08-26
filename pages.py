@@ -14,7 +14,67 @@ video_path = os.path.join('VIDEOS', 'VIDEO-2024-04-10-01-50-33.mp4')
 # Function to render the home page
 def home_page():
     """Render the Home page."""
-    st.title("Turkey Energy Overview")
+    # Set the title of the Streamlit app
+    # Custom CSS for enhanced styling
+    # Custom CSS for enhanced styling
+    st.markdown("""
+        <style>
+        .title {
+            font-size: 36px;
+            color: #38cebb;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin-top: 15px;
+        }
+        .section-title {
+            font-size: 24px;
+            color: #38cebb;
+            background-color: None;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .section-content {
+            font-size: 18px;
+            color: #f0f0f0;
+            padding: 15px;
+            background-color: None;
+            border-radius: 5px;
+        }
+        .container {
+            background-color: None;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    # Introduction and objectives with enhanced styling
+    st.markdown("""
+        <div class="title">Energy Insights: Analyzing and Forecasting Turkey’s Energy Landscape</div>
+        <div class="section">
+            <div class="section-content">
+                Energy is the cornerstone of modern economies and a critical factor in national development. For Turkey, a country with a rapidly growing population and a dynamic economy, managing energy resources efficiently is paramount. The ability to analyze and forecast energy consumption and production not only supports sustainable development but also enhances economic stability and environmental sustainability.
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Objectives of This Project</div>
+            <div class="section-content">
+                This project is designed to provide comprehensive insights into Turkey's energy sector by:
+                <ol>
+                    <li><strong>Investigating Energy Production:</strong> We analyze the current energy production landscape to understand regional contributions and identify potential inefficiencies or areas for improvement.</li>
+                    <li><strong>Forecasting Energy Needs:</strong> By forecasting future energy requirements, we aim to anticipate demand fluctuations and prepare for potential challenges.</li>
+                    <li><strong>Detecting Anomalies:</strong> Through detailed mapping and analysis, we seek to uncover anomalies in energy consumption and production patterns. This helps in recognizing unusual trends that may indicate underlying issues or opportunities for optimization.</li>
+                    <li><strong>Providing Actionable Insights:</strong> Our interactive maps and data visualizations offer actionable insights for policymakers, businesses, and researchers to make informed decisions about energy management and strategy.</li>
+                </ol>
+                By leveraging advanced data analysis techniques and forecasting models, this application aims to contribute to a more informed and efficient approach to managing Turkey’s energy resources. Explore the maps and analyses to gain a deeper understanding of Turkey’s energy dynamics and drive positive change in the sector.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.subheader("")
     if os.path.exists(image_path):
         st.image(image_path, use_column_width='always')
     else:
