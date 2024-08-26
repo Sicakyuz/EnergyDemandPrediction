@@ -85,25 +85,8 @@ def contact_page():
     st.title("Contact")
     st.markdown("""
         ## Contact Information
-        This section contains contact information and a form.
-        You can reach out to one of the team members below.
+        TYou can reach us via contact form.
     """)
-    if os.path.exists(video_path):
-        st.video(video_path)
-    else:
-        st.error(f"Video file not found: {video_path}")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.write("Person 1")
-    with col2:
-        st.write("Person 2")
-    with col3:
-        st.write("Person 3")
-    with col4:
-        st.write("Person 4")
-    with col5:
-        st.write("Person 5")
 
     with st.form("contact_form"):
         name = st.text_input("Name")
