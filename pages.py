@@ -143,7 +143,7 @@ def contact_page():
     st.title("Contact")
     st.markdown("""
         ## Contact Information
-        TYou can reach us via contact form.
+        You can reach us via contact form.
     """)
 
     with st.form("contact_form"):
