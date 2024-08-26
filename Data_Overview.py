@@ -134,11 +134,11 @@ def main_data():
     production_data = ['BIYOKUTLE_LISANSSIZ', 'GUNES_LISANSSIZ', 'HIDROLIK_LISANSSIZ', 'RUZGAR_LISANSSIZ',
                        'LISANSSIZ_GENEL_TOPLAM', 'URETIM_LISANSLI']
 
-    choice = st.sidebar.selectbox(
+    choice = st.sidebar.radio(
         "Analysis for:",
         ("Analysis of Energy Production Data", "Analysis of Energy Consumption Data",
-         "Comparison of Energy Production Amounts and Energy Consumption Amounts"))
-
+         "Comparison of Energy Production Amounts and Energy Consumption Amounts")
+    )
     if choice == "Analysis of Energy Production Data":
         st.title(" Analysis of Renewable Energy Resources Production ")
         p_country, p_region, p_city = st.tabs(
