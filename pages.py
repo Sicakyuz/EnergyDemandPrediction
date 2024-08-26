@@ -49,9 +49,67 @@ def modeling_page():
 
 def map_page():
     """Render the Results page."""
-    selected_subtab = st.sidebar.radio("Options", ["Map View", "Energy Production Forecast"])
-    if selected_subtab == "Map View":
-        st.header("Turkey Map: Energy Consumption")
+    selected_subtab = st.sidebar.radio("Options", ["Energy consumption", "Energy Production Forecast"])
+    st.header("**🌟 Turkey's Energy Map**")
+    # Usage Instructions with Emojis
+    st.subheader("🗺️ How to Use the Map Functionality")
+    # Custom CSS to style the expander and text colors
+    st.markdown("""
+            <style>
+            /* Expander Header Styling */
+            .css-1v3fvcr .css-1e6f6z4 {
+                background-color: #333; /* Dark background for the expander header */
+                color: #38cebb; /* Teal color for the expander header text */
+            }
+
+            /* Expander Inner Content Styling */
+            .css-1v3fvcr .css-1n3zhzy {
+                background-color: #2b2b2b; /* Dark grey background for inner content */
+                color: #e0e0e0; /* Light grey text color for better readability */
+                border-radius: 5px;
+                padding: 10px;
+            }
+
+            /* Expander Inner Content Text Color */
+            .css-1v3fvcr .css-1n3zhzy h2, 
+            .css-1v3fvcr .css-1n3zhzy h3 {
+                color: #38cebb; /* Teal color for section headers */
+            }
+            </style>
+        """, unsafe_allow_html=True)
+    # Usage Instructions with Emojis in Expanders
+    with st.expander("🗺️ How to Use the Map Functionality", expanded=True):
+        st.markdown("""
+                Welcome to the map feature of the Turkey Energy Overview application! This interactive map helps you visualize energy consumption and production forecasts across Turkey. Here’s a quick guide on how to use it effectively:
+
+                <span style="color:#38cebb">**1. Navigating to the Map Page** 🧭</span>
+                - **Select Map View**: From the sidebar on the left, choose between "Map View" and "Energy Production Forecast" to switch between different map types.
+
+                <span style="color:#38cebb">**2. Understanding the Maps** 🌍</span>
+                - **Energy Consumption Map**:
+                  - **Purpose**: Displays actual energy consumption data across Turkey.
+                  - **Markers**: Represent different locations with their total energy consumption.
+                  - **Tooltip** 💬: Hover over a marker to see the location name and total energy consumption.
+                  - **Popup** 📊: Click on a marker to view detailed consumption data for that location.
+
+                - **Energy Production Forecast Map**:
+                  - **Purpose**: Shows forecasted energy production data for various regions.
+                  - **Markers**: Indicate locations with estimated energy production.
+                  - **Tooltip** 💬: Hover over a marker to see the location name and estimated production.
+                  - **Popup** 📊: Click on a marker to view the forecasted energy production or note if no data is available.
+
+                <span style="color:#38cebb">**3. Switching Between Views** 🔄</span>
+                - Use the sidebar to select **"Map View"** for consumption data or **"Energy Production Forecast"** for production forecasts.
+
+                <span style="color:#38cebb">**4. Tips for Effective Use** 💡</span>
+                - **Zoom and Pan**: Use the zoom controls or scroll wheel to explore specific areas. Drag the map to pan and view different regions.
+                - **Clustered Markers**: Markers are grouped into clusters for easier readability. Zooming in will reveal individual markers.
+
+                <span style="color:#38cebb">**5. Need More Help?** 🤔</span>
+                - **Contact Us**: For questions or further assistance, please visit the Contact page to get in touch with us.
+            """, unsafe_allow_html=True)
+    if selected_subtab == "Energy consumption":
+        st.header("🌟 Turkey's Energy Map: Energy Consumption")
         turkey_map = folium.Map(location=[39.9334, 32.8597], zoom_start=6)
         marker_cluster = MarkerCluster().add_to(turkey_map)
 
@@ -66,7 +124,7 @@ def map_page():
         folium_static(turkey_map, width=1450, height=700)
 
     elif selected_subtab == "Energy Production Forecast":
-        st.header("Energy Production Forecast Map")
+        st.header("🌟Energy Production Forecast Map")
         energy_forecast_map = folium.Map(location=[39.9334, 32.8597], zoom_start=6)
         marker_cluster = MarkerCluster().add_to(energy_forecast_map)
 
