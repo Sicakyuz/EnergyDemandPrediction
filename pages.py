@@ -5,16 +5,27 @@ from streamlit_folium import folium_static
 from Data_Overview import main_data
 from Time_series import main_City
 from TR_general import main_TR
+import os
 
+# Define the path relative to your script or working directory
+image_path = os.path.join('PHOTOS', 'roadmap.png')
+video_path = os.path.join('VIDEOS', 'VIDEO-2024-04-10-01-50-33.mp4')
+
+# Function to render the home page
 def home_page():
     """Render the Home page."""
     st.title("Turkey Energy Overview")
-    st.image('/Users/asmir/Desktop/MyProjects/EnergyDemandPrediction/PHOTOS/roadmap.png', use_column_width='always')
+    if os.path.exists(image_path):
+        st.image(image_path, use_column_width='always')
+    else:
+        st.error(f"Image file not found: {image_path}")
     st.markdown("""
         ## 
         This dashboard is designed to analyze Turkey's energy consumption.
         You can perform detailed data analysis, forecasting, and anomaly detection.
     """)
+
+# Function to render the contact page
 
 def data_overview_page():
     """Render the Data Overview page."""
@@ -77,7 +88,10 @@ def contact_page():
         This section contains contact information and a form.
         You can reach out to one of the team members below.
     """)
-    st.video('/Users/asmir/Desktop/Enerji/Enerji/VIDEOS/VIDEO-2024-04-10-01-50-33.mp4')
+    if os.path.exists(video_path):
+        st.video(video_path)
+    else:
+        st.error(f"Video file not found: {video_path}")
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
